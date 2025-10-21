@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -13,6 +14,7 @@
     #timeline { position: absolute; bottom: 10px; left: 10px; width: 300px; background: rgba(255,255,255,0.8); padding: 10px; border-radius: 5px; z-index: 2; }
     .snapshot-item { margin-bottom: 5px; }
     .visited-path { stroke: blue !important; }
+    #controls { position: absolute; top: 10px; right: 10px; z-index: 2; background: rgba(255,255,255,0.8); padding: 10px; border-radius: 5px; }
   </style>
 </head>
 <body>
@@ -21,6 +23,9 @@
   <div id="timeline">
     <h3>Snapshots</h3>
     <div id="snapshot-list"></div>
+  </div>
+  <div id="controls">
+    <button id="set-home-button">Set Home</button>
   </div>
 
   <script>
@@ -36,7 +41,19 @@
 
     let snapshots = [];
     let markers = [];
-    let lastVisitedSnapshot = null;
+    let homeBase = null;
+    let homeBaseMarker = null;
+
+    document.getElementById('set-home-button').onclick = () => {
+      const center = map.getCenter();
+      homeBase = { lat: center.lat, lng: center.lng };
+      if (homeBaseMarker) {
+        map.removeLayer(homeBaseMarker);
+      }
+      homeBaseMarker = L.marker([homeBase.lat, homeBase.lng], { icon: L.divIcon({ className: 'home-icon', html: '🏠' }) }).addTo(map)
+        .bindPopup(`<b>Home Base</b><br>${homeBase.lat.toFixed(4)}, ${homeBase.lng.toFixed(4)}`);
+      drawConnections();
+    };
 
     map.on('click', function(e) {
       const lat = e.latlng.lat;
@@ -66,11 +83,6 @@
       const snapshot = snapshots.find(s => s.id === id);
       if (snapshot) {
         snapshot.visited = true;
-        if (lastVisitedSnapshot) {
-          // Draw connection between last visited and current visited
-          drawConnection(lastVisitedSnapshot, snapshot, 'blue');
-        }
-        lastVisitedSnapshot = snapshot;
         updateTimeline();
         drawConnections(); // Redraw all connections to update colors
       }
@@ -89,22 +101,32 @@
 
     function drawConnections() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (snapshots.length < 2) return;
+      if (!homeBase && snapshots.length < 2) return;
 
-      for (let i = 0; i < snapshots.length - 1; i++) {
-        const s1 = snapshots[i];
-        const s2 = snapshots[i+1];
-        drawConnection(s1, s2, s1.visited && s2.visited ? 'blue' : 'red');
+      ctx.lineWidth = 2;
+
+      // Draw connections from home base to all snapshots
+      if (homeBase) {
+        snapshots.forEach(s => {
+          drawSingleConnection(homeBase, s, s.visited ? 'blue' : 'red');
+        });
+      }
+
+      // Draw connections between sequential snapshots if no home base or if home base is also a snapshot
+      if (!homeBase || snapshots.some(s => s.lat === homeBase.lat && s.lng === homeBase.lng)) {
+        for (let i = 0; i < snapshots.length - 1; i++) {
+          const s1 = snapshots[i];
+          const s2 = snapshots[i+1];
+          drawSingleConnection(s1, s2, s1.visited && s2.visited ? 'blue' : 'red');
+        }
       }
     }
 
-    function drawConnection(s1, s2, color) {
+    function drawSingleConnection(s1, s2, color) {
       const p1 = map.latLngToContainerPoint([s1.lat, s1.lng]);
       const p2 = map.latLngToContainerPoint([s2.lat, s2.lng]);
 
       ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-
       ctx.beginPath();
       ctx.moveTo(p1.x, p1.y);
       ctx.lineTo(p2.x, p2.y);
