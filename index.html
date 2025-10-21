@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -27,6 +26,9 @@
   </div>
   <div id="controls">
     <button id="set-home-button">Set Home</button>
+    <button id="start-recording-button">Start Recording</button>
+    <button id="stop-recording-button">Stop Recording</button>
+    <button id="play-back-button">Play Back</button>
   </div>
 
   <script>
@@ -45,6 +47,10 @@
     let homeBase = null;
     let homeBaseMarker = null;
     let lastVisitedSnapshot = null;
+    let isRecording = false;
+    let recordedTrail = [];
+    let recordedTrails = [];
+    let recordingStartTime = null;
 
     document.getElementById('set-home-button').onclick = () => {
       const center = map.getCenter();
@@ -57,9 +63,40 @@
       drawConnections();
     };
 
+    document.getElementById('start-recording-button').onclick = () => {
+      isRecording = true;
+      recordedTrail = [];
+      recordingStartTime = new Date();
+      console.log('Recording started');
+    };
+
+    document.getElementById('stop-recording-button').onclick = () => {
+      isRecording = false;
+      if (recordedTrail.length > 1) {
+        const recordingEndTime = new Date();
+        const duration = (recordingEndTime - recordingStartTime) / 1000; // in seconds
+        const distance = calculateDistance(recordedTrail); // Haversine formula
+        recordedTrails.push({ trail: recordedTrail, duration: duration, distance: distance });
+        console.log('Recording stopped. Trail saved.', recordedTrails);
+        updateTimeline();
+      }
+    };
+
+    document.getElementById('play-back-button').onclick = () => {
+      if (recordedTrails.length > 0) {
+        const trailToPlay = recordedTrails[recordedTrails.length - 1].trail; // Play the last recorded trail
+        playBackTrail(trailToPlay);
+      }
+    };
+
     map.on('click', function(e) {
       const lat = e.latlng.lat;
       const lng = e.latlng.lng;
+
+      if (isRecording) {
+        recordedTrail.push({ lat: lat, lng: lng, timestamp: new Date() });
+        console.log('Recorded point:', lat, lng);
+      }
 
       // Simulate taking a snapshot
       const snapshot = {
@@ -100,6 +137,13 @@
         div.innerHTML = `<b>${s.id}.</b> ${s.description} (${s.timestamp}) ${s.visited ? '(Visited)' : ''}`;
         snapshotList.appendChild(div);
       });
+
+      recordedTrails.forEach((trail, index) => {
+        const div = document.createElement('div');
+        div.className = 'snapshot-item';
+        div.innerHTML = `<b>Trail ${index + 1}:</b> Distance: ${trail.distance.toFixed(2)} km, Duration: ${trail.duration.toFixed(0)} s`;
+        snapshotList.appendChild(div);
+      });
     }
 
     async function getRoute(startLat, startLng, endLat, endLng) {
@@ -136,6 +180,16 @@
           await drawSingleConnection(s1, s2, color);
         }
       }
+
+      // Draw recorded trails
+      for (const trailData of recordedTrails) {
+        const trail = trailData.trail;
+        if (trail.length > 1) {
+          for (let i = 0; i < trail.length - 1; i++) {
+            await drawSingleConnection(trail[i], trail[i+1], 'green'); // Recorded trails in green
+          }
+        }
+      }
     }
 
     async function drawSingleConnection(s1, s2, color) {
@@ -153,6 +207,38 @@
         }
       }
       ctx.stroke();
+    }
+
+    function calculateDistance(trail) {
+      let totalDistance = 0;
+      for (let i = 0; i < trail.length - 1; i++) {
+        totalDistance += map.distance([trail[i].lat, trail[i].lng], [trail[i+1].lat, trail[i+1].lng]);
+      }
+      return totalDistance / 1000; // Convert to kilometers
+    }
+
+    let playbackMarker = null;
+    let playbackIndex = 0;
+    let playbackInterval = null;
+
+    async function playBackTrail(trail) {
+      if (playbackInterval) clearInterval(playbackInterval);
+      if (playbackMarker) map.removeLayer(playbackMarker);
+
+      playbackIndex = 0;
+      playbackMarker = L.marker([trail[0].lat, trail[0].lng]).addTo(map);
+
+      playbackInterval = setInterval(() => {
+        if (playbackIndex < trail.length - 1) {
+          playbackIndex++;
+          playbackMarker.setLatLng([trail[playbackIndex].lat, trail[playbackIndex].lng]);
+          map.panTo([trail[playbackIndex].lat, trail[playbackIndex].lng]);
+        } else {
+          clearInterval(playbackInterval);
+          map.removeLayer(playbackMarker);
+          playbackMarker = null;
+        }
+      }, 200); // Adjust playback speed here
     }
 
     // Fetch EV stations
