@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -14,6 +13,7 @@
     #timeline { position: absolute; bottom: 10px; left: 10px; width: 300px; background: rgba(255,255,255,0.8); padding: 10px; border-radius: 5px; z-index: 2; }
     .snapshot-item { margin-bottom: 5px; }
     .visited-path { stroke: blue !important; }
+    .important-path { stroke: yellow !important; stroke-width: 4px !important; }
     #controls { position: absolute; top: 10px; right: 10px; z-index: 2; background: rgba(255,255,255,0.8); padding: 10px; border-radius: 5px; }
   </style>
 </head>
@@ -29,7 +29,7 @@
   </div>
 
   <script>
-    const map = L.map('mapid').setView([0, 0], 2); // Initial view, will be updated
+    const map = L.map('mapid').setView([47.5615, -52.7126], 13); // St. John's, Newfoundland
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);
@@ -43,6 +43,7 @@
     let markers = [];
     let homeBase = null;
     let homeBaseMarker = null;
+    let lastVisitedSnapshot = null;
 
     document.getElementById('set-home-button').onclick = () => {
       const center = map.getCenter();
@@ -83,6 +84,7 @@
       const snapshot = snapshots.find(s => s.id === id);
       if (snapshot) {
         snapshot.visited = true;
+        lastVisitedSnapshot = snapshot;
         updateTimeline();
         drawConnections(); // Redraw all connections to update colors
       }
@@ -108,7 +110,8 @@
       // Draw connections from home base to all snapshots
       if (homeBase) {
         snapshots.forEach(s => {
-          drawSingleConnection(homeBase, s, s.visited ? 'blue' : 'red');
+          const color = (s.visited && lastVisitedSnapshot && s.id === lastVisitedSnapshot.id) ? 'yellow' : (s.visited ? 'blue' : 'red');
+          drawSingleConnection(homeBase, s, color);
         });
       }
 
@@ -117,7 +120,8 @@
         for (let i = 0; i < snapshots.length - 1; i++) {
           const s1 = snapshots[i];
           const s2 = snapshots[i+1];
-          drawSingleConnection(s1, s2, s1.visited && s2.visited ? 'blue' : 'red');
+          const color = (s1.visited && s2.visited && lastVisitedSnapshot && (s1.id === lastVisitedSnapshot.id || s2.id === lastVisitedSnapshot.id)) ? 'yellow' : (s1.visited && s2.visited ? 'blue' : 'red');
+          drawSingleConnection(s1, s2, color);
         }
       }
     }
@@ -132,6 +136,19 @@
       ctx.lineTo(p2.x, p2.y);
       ctx.stroke();
     }
+
+    // Fetch EV stations
+    fetch('https://api.openchargemap.io/v3/poi/?output=json&countrycode=CA&maxresults=100&compact=true&verbose=false&latitude=47.5615&longitude=-52.7126&distance=50')
+      .then(response => response.json())
+      .then(data => {
+        data.forEach(station => {
+          if (station.AddressInfo && station.AddressInfo.Latitude && station.AddressInfo.Longitude) {
+            L.marker([station.AddressInfo.Latitude, station.AddressInfo.Longitude], { icon: L.divIcon({ className: 'ev-icon', html: '⚡' }) }).addTo(map)
+              .bindPopup(`<b>${station.AddressInfo.Title}</b><br>${station.AddressInfo.AddressLine1 || ''}`);
+          }
+        });
+      })
+      .catch(error => console.error('Error fetching EV stations:', error));
 
     map.on('moveend', drawConnections);
     window.onresize = () => {
