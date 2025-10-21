@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -42,14 +43,15 @@
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
-    let snapshots = [];
-    let markers = [];
+    let snapshots = []; // For manually placed pins
+    let markers = []; // For manually placed pins
     let homeBase = null;
     let homeBaseMarker = null;
     let lastVisitedSnapshot = null;
+
     let isRecording = false;
-    let recordedTrail = [];
-    let recordedTrails = [];
+    let recordedTrailPoints = []; // Points collected during recording
+    let recordedTrails = []; // Stored recorded trails
     let recordingStartTime = null;
 
     document.getElementById('set-home-button').onclick = () => {
@@ -65,18 +67,18 @@
 
     document.getElementById('start-recording-button').onclick = () => {
       isRecording = true;
-      recordedTrail = [];
+      recordedTrailPoints = [];
       recordingStartTime = new Date();
       console.log('Recording started');
     };
 
     document.getElementById('stop-recording-button').onclick = () => {
       isRecording = false;
-      if (recordedTrail.length > 1) {
+      if (recordedTrailPoints.length > 1) {
         const recordingEndTime = new Date();
         const duration = (recordingEndTime - recordingStartTime) / 1000; // in seconds
-        const distance = calculateDistance(recordedTrail); // Haversine formula
-        recordedTrails.push({ trail: recordedTrail, duration: duration, distance: distance });
+        const distance = calculateDistance(recordedTrailPoints); // Haversine formula
+        recordedTrails.push({ trail: recordedTrailPoints, duration: duration, distance: distance, id: recordedTrails.length + 1 });
         console.log('Recording stopped. Trail saved.', recordedTrails);
         updateTimeline();
       }
@@ -94,28 +96,28 @@
       const lng = e.latlng.lng;
 
       if (isRecording) {
-        recordedTrail.push({ lat: lat, lng: lng, timestamp: new Date() });
+        recordedTrailPoints.push({ lat: lat, lng: lng, timestamp: new Date() });
         console.log('Recorded point:', lat, lng);
+        drawConnections(); // Redraw to show the green recording line
+      } else {
+        // Manual pin creation (existing functionality)
+        const snapshot = {
+          id: snapshots.length + 1,
+          lat: lat,
+          lng: lng,
+          timestamp: new Date().toLocaleString(),
+          description: `Snapshot at ${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+          visited: false
+        };
+        snapshots.push(snapshot);
+
+        const marker = L.marker([lat, lng]).addTo(map)
+          .bindPopup(`<b>Snapshot ${snapshot.id}</b><br>${snapshot.description}<br><button onclick="visitSnapshot(${snapshot.id})">Visit</button>`);
+        markers.push(marker);
+
+        updateTimeline();
+        drawConnections();
       }
-
-      // Simulate taking a snapshot
-      const snapshot = {
-        id: snapshots.length + 1,
-        lat: lat,
-        lng: lng,
-        timestamp: new Date().toLocaleString(),
-        description: `Snapshot at ${lat.toFixed(4)}, ${lng.toFixed(4)}`,
-        visited: false
-      };
-      snapshots.push(snapshot);
-
-      // Add marker to map
-      const marker = L.marker([lat, lng]).addTo(map)
-        .bindPopup(`<b>Snapshot ${snapshot.id}</b><br>${snapshot.description}<br><button onclick="visitSnapshot(${snapshot.id})">Visit</button>`);
-      markers.push(marker);
-
-      updateTimeline();
-      drawConnections();
     });
 
     function visitSnapshot(id) {
@@ -138,10 +140,10 @@
         snapshotList.appendChild(div);
       });
 
-      recordedTrails.forEach((trail, index) => {
+      recordedTrails.forEach((trailData, index) => {
         const div = document.createElement('div');
         div.className = 'snapshot-item';
-        div.innerHTML = `<b>Trail ${index + 1}:</b> Distance: ${trail.distance.toFixed(2)} km, Duration: ${trail.duration.toFixed(0)} s`;
+        div.innerHTML = `<b>Recorded Trail ${trailData.id}:</b> Distance: ${trailData.distance.toFixed(2)} km, Duration: ${trailData.duration.toFixed(0)} s <button onclick="playBackTrail(recordedTrails[${index}].trail)">Play</button>`;
         snapshotList.appendChild(div);
       });
     }
@@ -159,8 +161,6 @@
 
     async function drawConnections() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (!homeBase && snapshots.length < 2) return;
-
       ctx.lineWidth = 2;
 
       // Draw connections from home base to all snapshots
@@ -171,22 +171,25 @@
         }
       }
 
-      // Draw connections between sequential snapshots if no home base or if home base is also a snapshot
-      if (!homeBase || snapshots.some(s => s.lat === homeBase.lat && s.lng === homeBase.lng)) {
-        for (let i = 0; i < snapshots.length - 1; i++) {
-          const s1 = snapshots[i];
-          const s2 = snapshots[i+1];
-          const color = (s1.visited && s2.visited && lastVisitedSnapshot && (s1.id === lastVisitedSnapshot.id || s2.id === lastVisitedSnapshot.id)) ? 'yellow' : (s1.visited && s2.visited ? 'blue' : 'red');
-          await drawSingleConnection(s1, s2, color);
-        }
+      // Draw connections between sequential snapshots
+      for (let i = 0; i < snapshots.length - 1; i++) {
+        const s1 = snapshots[i];
+        const s2 = snapshots[i+1];
+        const color = (s1.visited && s2.visited && lastVisitedSnapshot && (s1.id === lastVisitedSnapshot.id || s2.id === lastVisitedSnapshot.id)) ? 'yellow' : (s1.visited && s2.visited ? 'blue' : 'red');
+        await drawSingleConnection(s1, s2, color);
       }
 
-      // Draw recorded trails
+      // Draw recorded trails (green line during recording, or for stored trails)
+      if (isRecording && recordedTrailPoints.length > 1) {
+        for (let i = 0; i < recordedTrailPoints.length - 1; i++) {
+          await drawSingleConnection(recordedTrailPoints[i], recordedTrailPoints[i+1], 'green');
+        }
+      }
       for (const trailData of recordedTrails) {
         const trail = trailData.trail;
         if (trail.length > 1) {
           for (let i = 0; i < trail.length - 1; i++) {
-            await drawSingleConnection(trail[i], trail[i+1], 'green'); // Recorded trails in green
+            await drawSingleConnection(trail[i], trail[i+1], 'green');
           }
         }
       }
@@ -218,15 +221,24 @@
     }
 
     let playbackMarker = null;
-    let playbackIndex = 0;
     let playbackInterval = null;
+    let playbackMarkers = [];
 
     async function playBackTrail(trail) {
       if (playbackInterval) clearInterval(playbackInterval);
       if (playbackMarker) map.removeLayer(playbackMarker);
+      playbackMarkers.forEach(m => map.removeLayer(m)); // Remove old playback markers
+      playbackMarkers = [];
 
-      playbackIndex = 0;
+      // Add temporary markers for all points in the trail
+      trail.forEach((point, index) => {
+        const marker = L.marker([point.lat, point.lng]).addTo(map)
+          .bindPopup(`<b>Trail Point ${index + 1}</b><br>${point.lat.toFixed(4)}, ${point.lng.toFixed(4)}`);
+        playbackMarkers.push(marker);
+      });
+
       playbackMarker = L.marker([trail[0].lat, trail[0].lng]).addTo(map);
+      let playbackIndex = 0;
 
       playbackInterval = setInterval(() => {
         if (playbackIndex < trail.length - 1) {
@@ -237,6 +249,8 @@
           clearInterval(playbackInterval);
           map.removeLayer(playbackMarker);
           playbackMarker = null;
+          playbackMarkers.forEach(m => map.removeLayer(m)); // Remove temporary markers
+          playbackMarkers = [];
         }
       }, 200); // Adjust playback speed here
     }
