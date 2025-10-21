@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -13,6 +12,7 @@
     #canvas { position: absolute; top: 0; left: 0; z-index: 1; pointer-events: none; }
     #timeline { position: absolute; bottom: 10px; left: 10px; width: 300px; background: rgba(255,255,255,0.8); padding: 10px; border-radius: 5px; z-index: 2; }
     .snapshot-item { margin-bottom: 5px; }
+    .visited-path { stroke: blue !important; }
   </style>
 </head>
 <body>
@@ -36,6 +36,7 @@
 
     let snapshots = [];
     let markers = [];
+    let lastVisitedSnapshot = null;
 
     map.on('click', function(e) {
       const lat = e.latlng.lat;
@@ -47,18 +48,33 @@
         lat: lat,
         lng: lng,
         timestamp: new Date().toLocaleString(),
-        description: `Snapshot at ${lat.toFixed(4)}, ${lng.toFixed(4)}`
+        description: `Snapshot at ${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+        visited: false
       };
       snapshots.push(snapshot);
 
       // Add marker to map
       const marker = L.marker([lat, lng]).addTo(map)
-        .bindPopup(`<b>Snapshot ${snapshot.id}</b><br>${snapshot.description}`);
+        .bindPopup(`<b>Snapshot ${snapshot.id}</b><br>${snapshot.description}<br><button onclick="visitSnapshot(${snapshot.id})">Visit</button>`);
       markers.push(marker);
 
       updateTimeline();
       drawConnections();
     });
+
+    function visitSnapshot(id) {
+      const snapshot = snapshots.find(s => s.id === id);
+      if (snapshot) {
+        snapshot.visited = true;
+        if (lastVisitedSnapshot) {
+          // Draw connection between last visited and current visited
+          drawConnection(lastVisitedSnapshot, snapshot, 'blue');
+        }
+        lastVisitedSnapshot = snapshot;
+        updateTimeline();
+        drawConnections(); // Redraw all connections to update colors
+      }
+    }
 
     function updateTimeline() {
       const snapshotList = document.getElementById('snapshot-list');
@@ -66,7 +82,7 @@
       snapshots.forEach(s => {
         const div = document.createElement('div');
         div.className = 'snapshot-item';
-        div.innerHTML = `<b>${s.id}.</b> ${s.description} (${s.timestamp})`;
+        div.innerHTML = `<b>${s.id}.</b> ${s.description} (${s.timestamp}) ${s.visited ? '(Visited)' : ''}`;
         snapshotList.appendChild(div);
       });
     }
@@ -75,18 +91,24 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (snapshots.length < 2) return;
 
-      ctx.strokeStyle = 'red';
+      for (let i = 0; i < snapshots.length - 1; i++) {
+        const s1 = snapshots[i];
+        const s2 = snapshots[i+1];
+        drawConnection(s1, s2, s1.visited && s2.visited ? 'blue' : 'red');
+      }
+    }
+
+    function drawConnection(s1, s2, color) {
+      const p1 = map.latLngToContainerPoint([s1.lat, s1.lng]);
+      const p2 = map.latLngToContainerPoint([s2.lat, s2.lng]);
+
+      ctx.strokeStyle = color;
       ctx.lineWidth = 2;
 
-      for (let i = 0; i < snapshots.length - 1; i++) {
-        const p1 = map.latLngToContainerPoint([snapshots[i].lat, snapshots[i].lng]);
-        const p2 = map.latLngToContainerPoint([snapshots[i+1].lat, snapshots[i+1].lng]);
-
-        ctx.beginPath();
-        ctx.moveTo(p1.x, p1.y);
-        ctx.lineTo(p2.x, p2.y);
-        ctx.stroke();
-      }
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
     }
 
     map.on('moveend', drawConnections);
