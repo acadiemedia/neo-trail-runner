@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,6 +6,7 @@
   <title>Neo Trail Runner</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/@tmcw/togeojson@latest/dist/togeojson.js"></script>
   <style>
     body { margin: 0; overflow: hidden; font-family: sans-serif; }
     #mapid { height: 100vh; width: 100vw; position: absolute; top: 0; left: 0; z-index: 0; }
@@ -16,6 +16,8 @@
     .visited-path { stroke: blue !important; }
     .important-path { stroke: yellow !important; stroke-width: 4px !important; }
     #controls { position: absolute; top: 10px; right: 10px; z-index: 2; background: rgba(255,255,255,0.8); padding: 10px; border-radius: 5px; }
+    #file-input { margin-top: 10px; }
+    #video-overlay { position: absolute; top: 10px; left: 10px; width: 200px; height: 150px; background: rgba(0,0,0,0.5); color: white; display: flex; justify-content: center; align-items: center; z-index: 2; border-radius: 5px; }
   </style>
 </head>
 <body>
@@ -30,7 +32,9 @@
     <button id="start-recording-button">Start Recording</button>
     <button id="stop-recording-button">Stop Recording</button>
     <button id="play-back-button">Play Back</button>
+    <input type="file" id="file-input" accept=".gpx,.kml" />
   </div>
+  <div id="video-overlay">Video Feed with AI Visuals (Coming Soon)</div>
 
   <script>
     const map = L.map('mapid').setView([47.5615, -52.7126], 13); // St. John's, Newfoundland
@@ -90,6 +94,29 @@
         playBackTrail(trailToPlay);
       }
     };
+
+    document.getElementById('file-input').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        const text = event.target.result;
+        let geojson;
+        if (file.name.endsWith('.gpx')) {
+          geojson = togeojson.gpx(new DOMParser().parseFromString(text, 'text/xml'));
+        } else if (file.name.endsWith('.kml')) {
+          geojson = togeojson.kml(new DOMParser().parseFromString(text, 'text/xml'));
+        }
+
+        if (geojson) {
+          L.geoJSON(geojson, { style: { color: 'purple', weight: 3 } }).addTo(map);
+          // Optionally, fit map to bounds of loaded track
+          map.fitBounds(L.geoJSON(geojson).getBounds());
+        }
+      };
+      reader.readAsText(file);
+    });
 
     map.on('click', function(e) {
       const lat = e.latlng.lat;
@@ -182,7 +209,7 @@
       // Draw recorded trails (green line during recording, or for stored trails)
       if (isRecording && recordedTrailPoints.length > 1) {
         for (let i = 0; i < recordedTrailPoints.length - 1; i++) {
-          await drawSingleConnection(recordedTrailPoints[i], recordedTrailPoints[i+1], 'green');
+          await drawSingleConnection(recordedTrailPoints[i], recordedTrailPoints[i+1], 'green'); // Recorded trails in green
         }
       }
       for (const trailData of recordedTrails) {
