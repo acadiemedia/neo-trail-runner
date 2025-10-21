@@ -1,0 +1,100 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neo Trail Runner</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: sans-serif; }
+    #mapid { height: 100vh; width: 100vw; position: absolute; top: 0; left: 0; z-index: 0; }
+    #canvas { position: absolute; top: 0; left: 0; z-index: 1; pointer-events: none; }
+    #timeline { position: absolute; bottom: 10px; left: 10px; width: 300px; background: rgba(255,255,255,0.8); padding: 10px; border-radius: 5px; z-index: 2; }
+    .snapshot-item { margin-bottom: 5px; }
+  </style>
+</head>
+<body>
+  <div id="mapid"></div>
+  <canvas id="canvas"></canvas>
+  <div id="timeline">
+    <h3>Snapshots</h3>
+    <div id="snapshot-list"></div>
+  </div>
+
+  <script>
+    const map = L.map('mapid').setView([0, 0], 2); // Initial view, will be updated
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    let snapshots = [];
+    let markers = [];
+
+    map.on('click', function(e) {
+      const lat = e.latlng.lat;
+      const lng = e.latlng.lng;
+
+      // Simulate taking a snapshot
+      const snapshot = {
+        id: snapshots.length + 1,
+        lat: lat,
+        lng: lng,
+        timestamp: new Date().toLocaleString(),
+        description: `Snapshot at ${lat.toFixed(4)}, ${lng.toFixed(4)}`
+      };
+      snapshots.push(snapshot);
+
+      // Add marker to map
+      const marker = L.marker([lat, lng]).addTo(map)
+        .bindPopup(`<b>Snapshot ${snapshot.id}</b><br>${snapshot.description}`);
+      markers.push(marker);
+
+      updateTimeline();
+      drawConnections();
+    });
+
+    function updateTimeline() {
+      const snapshotList = document.getElementById('snapshot-list');
+      snapshotList.innerHTML = '';
+      snapshots.forEach(s => {
+        const div = document.createElement('div');
+        div.className = 'snapshot-item';
+        div.innerHTML = `<b>${s.id}.</b> ${s.description} (${s.timestamp})`;
+        snapshotList.appendChild(div);
+      });
+    }
+
+    function drawConnections() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (snapshots.length < 2) return;
+
+      ctx.strokeStyle = 'red';
+      ctx.lineWidth = 2;
+
+      for (let i = 0; i < snapshots.length - 1; i++) {
+        const p1 = map.latLngToContainerPoint([snapshots[i].lat, snapshots[i].lng]);
+        const p2 = map.latLngToContainerPoint([snapshots[i+1].lat, snapshots[i+1].lng]);
+
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
+      }
+    }
+
+    map.on('moveend', drawConnections);
+    window.onresize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      drawConnections();
+    };
+  </script>
+</body>
+</html>
